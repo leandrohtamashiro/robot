@@ -156,7 +156,7 @@ if st.session_state.trading_ativo:
 st.subheader("📋 Histórico de Negociações do Robô")
 
 if os.path.exists(log_file):
-    df_log = pd.read_csv(log_file, names=["horario", "moeda", "tipo", "preco", "qtd", "macd_fast", "macd_slow", "macd_signal"], header=None)
+    df_log = pd.read_csv(log_file)
     df_log['horario'] = pd.to_datetime(df_log['horario'])
     df_log.sort_values(by='horario', inplace=True)
 
