@@ -74,7 +74,27 @@ st.title("🤖 Robô Trader Pro - Análise por Moeda e Railway Ready")
 
 def filtrar_periodo(df, periodo):
     agora = datetime.now()
-    df['horario'] = pd.to_datetime(df['horario'])
+    if 'horario' in df.columns:
+        df['horario'] = pd.to_datetime(df['horario'])
+    elif 'data' in df.columns:
+        df.rename(columns={'data': 'horario'}, inplace=True)
+        df['horario'] = pd.to_datetime(df['horario'])
+    else:
+        st.error("O CSV de log não contém a coluna 'horario' ou 'data'. Corrija o arquivo operacoes_log.csv.")
+        return df.iloc[0:0]
+    if periodo == "1h":
+        inicio = agora - timedelta(hours=1)
+    elif periodo == "24h":
+        inicio = agora - timedelta(days=1)
+    elif periodo == "5d":
+        inicio = agora - timedelta(days=5)
+    elif periodo == "30d":
+        inicio = agora - timedelta(days=30)
+    elif periodo == "1ano":
+        inicio = agora - timedelta(days=365)
+    else:
+        inicio = df['horario'].min()
+    return df[df['horario'] >= inicio]
     if periodo == "1h":
         inicio = agora - timedelta(hours=1)
     elif periodo == "24h":
