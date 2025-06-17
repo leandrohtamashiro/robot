@@ -55,7 +55,7 @@ if st.session_state.autorefresh:
 @st.cache_resource(show_spinner=False)
 def get_binance_client():
     try:
-        c = Client(API_KEY, API_SECRET)
+        c = Client(API_KEY, API_SECRET, requests_params={"timeout": 30})
         c.ping()
         return c
     except:
@@ -126,7 +126,11 @@ def executar_trade():
     if not client:
         st.warning("Erro de conexão com a Binance.")
         return
-    saldo_total = float(client.get_asset_balance(asset='USDT')['free'])
+    try:
+        saldo_total = float(client.get_asset_balance(asset='USDT')['free'])
+    except Exception as e:
+        st.warning(f"Erro ao obter saldo USDT: {e}")
+        saldo_total = 0
     trailing_stop_percentage = 0.02  # Exemplo: 2% de trailing stop
     for symbol in symbols:
         try:
