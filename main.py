@@ -1,4 +1,4 @@
-# main.py - Robô Trader Pro com MACD Dinâmico, Gráficos de Desempenho, Análise por Moeda e Railway Ready
+# main.py - Robô Trader Pro Completo com Tabela de Negociações, Gráficos de Lucro e Indicadores Técnicos
 
 import streamlit as st
 import pandas as pd
@@ -39,19 +39,15 @@ st.session_state.trading_ativo = st.sidebar.toggle("🚦 Robô Ativo", value=st.
 st.session_state.autorefresh = st.sidebar.toggle("🔄 Autoatualização", value=st.session_state.autorefresh)
 intervalo = st.sidebar.selectbox("⏱️ Intervalo de Análise", ["15m", "5m", "1h"], index=0)
 
-# Controles dos Parâmetros MACD
+# Parâmetros MACD
 st.sidebar.markdown("## Parâmetros MACD")
 macd_fast = st.sidebar.slider("MACD Fast EMA", 5, 20, 12)
 macd_slow = st.sidebar.slider("MACD Slow EMA", 15, 50, 26)
 macd_signal = st.sidebar.slider("MACD Signal EMA", 5, 20, 9)
 
-# Controle de período para gráficos
+# Período para gráficos
 st.sidebar.markdown("## Período dos Gráficos")
-periodo_grafico = st.sidebar.selectbox(
-    "📅 Escolha o Período",
-    ["1h", "24h", "5d", "30d", "1ano"],
-    index=1
-)
+periodo_grafico = st.sidebar.selectbox("📅 Escolha o Período", ["1h", "24h", "5d", "30d", "1ano"], index=1)
 
 if st.session_state.autorefresh:
     st_autorefresh(interval=30000, key="refresh")
@@ -67,10 +63,6 @@ def get_binance_client():
 
 symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "IRONUSDT"]
 log_file = "operacoes_log.csv"
-
-st.title("🤖 Robô Trader Pro - Análise por Moeda e Railway Ready")
-
-# Funções auxiliares
 
 def filtrar_periodo(df, periodo):
     agora = datetime.now()
@@ -95,29 +87,12 @@ def filtrar_periodo(df, periodo):
     else:
         inicio = df['horario'].min()
     return df[df['horario'] >= inicio]
-    if periodo == "1h":
-        inicio = agora - timedelta(hours=1)
-    elif periodo == "24h":
-        inicio = agora - timedelta(days=1)
-    elif periodo == "5d":
-        inicio = agora - timedelta(days=5)
-    elif periodo == "30d":
-        inicio = agora - timedelta(days=30)
-    elif periodo == "1ano":
-        inicio = agora - timedelta(days=365)
-    else:
-        inicio = df['horario'].min()
-    return df[df['horario'] >= inicio]
 
 def get_klines(symbol, interval=Client.KLINE_INTERVAL_15MINUTE, limit=100):
     client = get_binance_client()
     if client:
         try:
-            intervalo_binance = {
-                "15m": Client.KLINE_INTERVAL_15MINUTE,
-                "5m": Client.KLINE_INTERVAL_5MINUTE,
-                "1h": Client.KLINE_INTERVAL_1HOUR,
-            }[intervalo]
+            intervalo_binance = {"15m": Client.KLINE_INTERVAL_15MINUTE, "5m": Client.KLINE_INTERVAL_5MINUTE, "1h": Client.KLINE_INTERVAL_1HOUR}[intervalo]
             klines = client.get_klines(symbol=symbol, interval=intervalo_binance, limit=limit)
             closes = [float(k[4]) for k in klines]
             times = [datetime.fromtimestamp(int(k[0]/1000)) for k in klines]
@@ -177,70 +152,67 @@ def executar_trade():
 if st.session_state.trading_ativo:
     executar_trade()
 
-st.subheader("💰 Saldo Atual")
-client = get_binance_client()
-saldo_usdt = float(client.get_asset_balance(asset='USDT')['free']) if client else 0
-st.metric("Saldo USDT", f"${saldo_usdt:,.2f}")
+# Exibição da Tabela de Negociações com Lucro/Prejuízo
+st.subheader("📋 Histórico de Negociações do Robô")
 
 if os.path.exists(log_file):
-    df_log = pd.read_csv(log_file)
-    lucro_total = 0
-    for _, row in df_log.iterrows():
-        if row['tipo'] == 'VENDA':
-            lucro_total += row['preco'] * row['qtd']
-        elif row['tipo'] == 'COMPRA':
-            lucro_total -= row['preco'] * row['qtd']
-    st.metric("Lucro Bruto Estimado", f"${lucro_total:,.2f}")
+    df_log = pd.read_csv(log_file, names=["horario", "moeda", "tipo", "preco", "qtd", "macd_fast", "macd_slow", "macd_signal"], header=None)
+    df_log['horario'] = pd.to_datetime(df_log['horario'])
+    df_log.sort_values(by='horario', inplace=True)
 
-    df_periodo = filtrar_periodo(df_log, periodo_grafico)
-    if not df_periodo.empty:
-        df_periodo['saldo'] = df_periodo.apply(
-            lambda row: row['preco'] * row['qtd'] if row['tipo'] == 'VENDA' else -row['preco'] * row['qtd'], axis=1
-        ).cumsum()
-        fig, ax = plt.subplots()
-        ax.plot(df_periodo['horario'], df_periodo['saldo'], marker='o')
-        ax.set_xlabel('Data/Hora')
-        ax.set_ylabel('Lucro Acumulado (USDT)')
-        ax.set_title(f'Evolução do Lucro - Últimos {periodo_grafico}')
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%d-%m %H:%M'))
-        fig.autofmt_xdate()
-        st.pyplot(fig)
+    trades = []
+    position = {}
 
-        # Gráfico de Lucro/Perda por Moeda
-        df_periodo['lucro'] = df_periodo.apply(
-            lambda row: row['preco'] * row['qtd'] if row['tipo'] == 'VENDA' else -row['preco'] * row['qtd'], axis=1
-        )
-        fig2, ax2 = plt.subplots()
-        for symbol in symbols:
-            df_symbol = df_periodo[df_periodo['moeda'] == symbol]
-            if not df_symbol.empty:
-                ax2.plot(df_symbol['horario'], df_symbol['lucro'].cumsum(), label=symbol)
-        ax2.set_xlabel('Data/Hora')
-        ax2.set_ylabel('Lucro/Prejuízo Acumulado')
-        ax2.set_title('Lucro/Perda por Moeda')
-        ax2.legend()
-        ax2.xaxis.set_major_formatter(mdates.DateFormatter('%d-%m %H:%M'))
-        fig2.autofmt_xdate()
-        st.pyplot(fig2)
+    for index, row in df_log.iterrows():
+        key = row['moeda']
+        if row['tipo'] == 'COMPRA':
+            position[key] = {'preco': row['preco'], 'qtd': row['qtd'], 'data': row['horario']}
+        elif row['tipo'] == 'VENDA' and key in position:
+            compra = position.pop(key)
+            lucro = (row['preco'] - compra['preco']) * row['qtd']
+            trades.append({
+                'Moeda': key,
+                'Data Compra': compra['data'],
+                'Preço Compra': compra['preco'],
+                'Data Venda': row['horario'],
+                'Preço Venda': row['preco'],
+                'Quantidade': row['qtd'],
+                'Lucro/Prejuízo': lucro
+            })
 
-# Gráficos e Tabela por Moeda
-st.subheader("📈 Indicadores Técnicos por Moeda")
+    df_trades = pd.DataFrame(trades)
+    if not df_trades.empty:
+        st.dataframe(df_trades, use_container_width=True)
+
+        # Gráfico de Lucro/Prejuízo por Operação
+        fig3, ax3 = plt.subplots()
+        ax3.bar(df_trades['Data Venda'], df_trades['Lucro/Prejuízo'], color=np.where(df_trades['Lucro/Prejuízo']>=0, 'green', 'red'))
+        ax3.set_xlabel('Data da Venda')
+        ax3.set_ylabel('Lucro/Prejuízo (USDT)')
+        ax3.set_title('Lucro/Prejuízo por Operação')
+        fig3.autofmt_xdate()
+        st.pyplot(fig3)
+
+# Gráficos de Indicadores por Moeda
+st.subheader("📈 MACD, Médias Móveis e RSI por Moeda")
+
 for symbol in symbols:
     closes, times = get_klines(symbol)
     if closes is None or times is None:
         continue
     macd_line, signal_line, _ = MACD(closes, macd_fast, macd_slow, macd_signal)
     rsi_vals = RSI(closes, 14)
-    min_val = min(closes)
-    max_val = max(closes)
+    ema9 = pd.Series(closes).ewm(span=9, adjust=False).mean()
+    ema21 = pd.Series(closes).ewm(span=21, adjust=False).mean()
 
     fig, ax = plt.subplots()
-    ax.plot(times, closes, label='Preço de Fechamento')
     ax.plot(times[-len(macd_line):], macd_line, linestyle='--', label='MACD')
     ax.plot(times[-len(signal_line):], signal_line, linestyle=':', label='Signal')
+    ax.plot(times[-len(ema9):], ema9, linestyle='-', alpha=0.6, label='EMA 9')
+    ax.plot(times[-len(ema21):], ema21, linestyle='-', alpha=0.6, label='EMA 21')
     ax.set_xlabel('Data/Hora')
-    ax.set_ylabel('Preço (USDT)')
-    ax.set_title(f'{symbol} - Preço e MACD')
+    ax.set_ylabel('Indicadores')
+    ax.set_title(f'{symbol} - Indicadores Técnicos')
     ax.legend()
     fig.autofmt_xdate()
     st.pyplot(fig)
@@ -250,7 +222,7 @@ for symbol in symbols:
         'MACD': macd_line,
         'Signal': signal_line,
         'RSI': rsi_vals[-len(macd_line):],
-        'Min': [min_val]*len(macd_line),
-        'Max': [max_val]*len(macd_line)
+        'EMA 9': ema9[-len(macd_line):],
+        'EMA 21': ema21[-len(macd_line):]
     })
     st.dataframe(df_ind, use_container_width=True)
