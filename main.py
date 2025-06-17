@@ -46,6 +46,10 @@ macd_slow = st.sidebar.slider("MACD Slow EMA", 15, 50, 26)
 macd_signal = st.sidebar.slider("MACD Signal EMA", 5, 20, 9)
 
 # Período para gráficos
+
+# Parâmetros de Stop Loss
+st.sidebar.markdown("## Parâmetros de Stop Loss")
+stop_loss_percent = st.sidebar.slider("Stop Loss (%)", 1, 20, 5) / 100
 st.sidebar.markdown("## Período dos Gráficos")
 periodo_grafico = st.sidebar.selectbox("📅 Escolha o Período", ["1h", "24h", "5d", "30d", "1ano"], index=1)
 
@@ -185,8 +189,7 @@ if os.path.exists(log_file):
         elif row['tipo'] == 'VENDA' and key in position:
             compra = position.pop(key)
             lucro = (row['preco'] - compra['preco']) * row['qtd']
-            # Aplicação de Stop Loss (Exemplo: Stop de 5%)
-            stop_loss = compra['preco'] * 0.95
+            stop_loss = compra['preco'] * (1 - stop_loss_percent)
             if row['preco'] < stop_loss:
                 lucro = (stop_loss - compra['preco']) * row['qtd'](row['preco'] - compra['preco']) * row['qtd']
             trades.append({
@@ -214,6 +217,9 @@ if os.path.exists(log_file):
 
 # Painel de Saldo Total Consolidado por Dia
     st.subheader("📅 Saldo Consolidado Diário")
+    if not pd.api.types.is_datetime64_any_dtype(df_log['horario']):
+        df_log['horario'] = pd.to_datetime(df_log['horario'], errors='coerce')
+    df_log.dropna(subset=['horario'], inplace=True)
     df_log['Dia'] = df_log['horario'].dt.date
     df_log['Lucro'] = df_log.apply(lambda row: row['preco'] * row['qtd'] if row['tipo'] == 'VENDA' else -row['preco'] * row['qtd'], axis=1)
     saldo_diario = df_log.groupby('Dia')['Lucro'].sum().cumsum().reset_index()
