@@ -127,6 +127,7 @@ def executar_trade():
         st.warning("Erro de conexão com a Binance.")
         return
     saldo_total = float(client.get_asset_balance(asset='USDT')['free'])
+    trailing_stop_percentage = 0.02  # Exemplo: 2% de trailing stop
     for symbol in symbols:
         try:
             cond_compra, cond_venda, closes = analisar_macd(symbol)
@@ -157,7 +158,17 @@ st.subheader("📋 Histórico de Negociações do Robô")
 
 if os.path.exists(log_file):
     df_log = pd.read_csv(log_file)
-    df_log['horario'] = pd.to_datetime(df_log['horario'])
+    if 'horario' in df_log.columns:
+        df_log['horario'] = pd.to_datetime(df_log['horario'], errors='coerce')
+    elif 'data' in df_log.columns:
+        df_log.rename(columns={'data': 'horario'}, inplace=True)
+        df_log['horario'] = pd.to_datetime(df_log['horario'], errors='coerce')
+    else:
+        st.info("Nenhuma coluna de data encontrada no log ainda. Aguarde a primeira operação.")
+        df_log = pd.DataFrame(columns=["horario", "moeda", "tipo", "preco", "qtd", "macd_fast", "macd_slow", "macd_signal"])
+
+    df_log.dropna(subset=['horario'], inplace=True)
+    df_log.sort_values(by='horario', inplace=True)
     df_log.sort_values(by='horario', inplace=True)
 
     trades = []
@@ -170,6 +181,10 @@ if os.path.exists(log_file):
         elif row['tipo'] == 'VENDA' and key in position:
             compra = position.pop(key)
             lucro = (row['preco'] - compra['preco']) * row['qtd']
+            # Aplicação de Stop Loss (Exemplo: Stop de 5%)
+            stop_loss = compra['preco'] * 0.95
+            if row['preco'] < stop_loss:
+                lucro = (stop_loss - compra['preco']) * row['qtd'](row['preco'] - compra['preco']) * row['qtd']
             trades.append({
                 'Moeda': key,
                 'Data Compra': compra['data'],
@@ -192,6 +207,19 @@ if os.path.exists(log_file):
         ax3.set_title('Lucro/Prejuízo por Operação')
         fig3.autofmt_xdate()
         st.pyplot(fig3)
+
+# Painel de Saldo Total Consolidado por Dia
+    st.subheader("📅 Saldo Consolidado Diário")
+    df_log['Dia'] = df_log['horario'].dt.date
+    df_log['Lucro'] = df_log.apply(lambda row: row['preco'] * row['qtd'] if row['tipo'] == 'VENDA' else -row['preco'] * row['qtd'], axis=1)
+    saldo_diario = df_log.groupby('Dia')['Lucro'].sum().cumsum().reset_index()
+    fig4, ax4 = plt.subplots()
+    ax4.plot(saldo_diario['Dia'], saldo_diario['Lucro'], marker='o')
+    ax4.set_xlabel('Dia')
+    ax4.set_ylabel('Lucro Acumulado (USDT)')
+    ax4.set_title('Evolução do Saldo Diário')
+    fig4.autofmt_xdate()
+    st.pyplot(fig4)
 
 # Gráficos de Indicadores por Moeda
 st.subheader("📈 MACD, Médias Móveis e RSI por Moeda")
