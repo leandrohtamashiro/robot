@@ -158,6 +158,14 @@ def executar_trade():
         except Exception as e:
             st.warning(f"Erro ao processar {symbol}: {e}")
 
+client = get_binance_client()
+if client:
+    try:
+        saldo_total = float(client.get_asset_balance(asset='USDT')['free'])
+        st.markdown(f"## 💰 Saldo Atual na Binance (USDT): {saldo_total:.2f}")
+    except Exception as e:
+        st.warning(f"Erro ao obter saldo USDT: {e}")
+
 if st.session_state.trading_ativo:
     executar_trade()
 
@@ -244,8 +252,24 @@ for symbol in symbols:
     ema21 = pd.Series(closes).ewm(span=21, adjust=False).mean()
 
     fig, ax = plt.subplots()
-    ax.plot(times[-len(macd_line):], macd_line, linestyle='--', label='MACD')
-    ax.plot(times[-len(signal_line):], signal_line, linestyle=':', label='Signal')
+    ax.plot(times[-len(ema9):], ema9, linestyle='-', alpha=0.6, label='EMA 9')
+    ax.plot(times[-len(ema21):], ema21, linestyle='-', alpha=0.6, label='EMA 21')
+    ax.set_xlabel('Data/Hora')
+    ax.set_ylabel('Médias Móveis')
+    ax.set_title(f'{symbol} - EMA 9 e EMA 21')
+    ax.legend()
+    fig.autofmt_xdate()
+    st.pyplot(fig)
+
+    fig2, ax2 = plt.subplots()
+    ax2.plot(times[-len(macd_line):], macd_line, linestyle='--', label='MACD')
+    ax2.plot(times[-len(signal_line):], signal_line, linestyle=':', label='Signal')
+    ax2.set_xlabel('Data/Hora')
+    ax2.set_ylabel('MACD e Signal')
+    ax2.set_title(f'{symbol} - MACD vs Signal')
+    ax2.legend()
+    fig2.autofmt_xdate()
+    st.pyplot(fig2)
     ax.plot(times[-len(ema9):], ema9, linestyle='-', alpha=0.6, label='EMA 9')
     ax.plot(times[-len(ema21):], ema21, linestyle='-', alpha=0.6, label='EMA 21')
     ax.set_xlabel('Data/Hora')
