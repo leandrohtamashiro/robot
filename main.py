@@ -17,6 +17,15 @@ from decimal import Decimal, ROUND_DOWN
 from streamlit_autorefresh import st_autorefresh
 from decimal import Decimal, ROUND_DOWN
 
+@st.cache_resource(show_spinner=False)
+def get_binance_client():
+    try:
+        c = Client(API_KEY, API_SECRET, requests_params={"timeout": 30})
+        c.ping()
+        return c
+    except:
+        return None
+
 def mostrar_saldos():
     client = get_binance_client()
     if client:
@@ -115,14 +124,7 @@ periodo_grafico = st.sidebar.selectbox("📅 Escolha o Período", ["1h", "24h", 
 if st.session_state.autorefresh:
     st_autorefresh(interval=30000, key="refresh")
 
-@st.cache_resource(show_spinner=False)
-def get_binance_client():
-    try:
-        c = Client(API_KEY, API_SECRET, requests_params={"timeout": 30})
-        c.ping()
-        return c
-    except:
-        return None
+
 
 symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT"]
 log_file = "operacoes_log.csv"
