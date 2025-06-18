@@ -17,51 +17,6 @@ from decimal import Decimal, ROUND_DOWN
 from streamlit_autorefresh import st_autorefresh
 from decimal import Decimal, ROUND_DOWN
 
-@st.cache_resource(show_spinner=False)
-def get_binance_client():
-    try:
-        c = Client(API_KEY, API_SECRET, requests_params={"timeout": 30})
-        c.ping()
-        return c
-    except:
-        return None
-
-def mostrar_saldos():
-    client = get_binance_client()
-    if client:
-        try:
-            saldo_usdt = float(client.get_asset_balance(asset='USDT')['free'])
-            saldo_btc = float(client.get_asset_balance(asset='BTC')['free'])
-            saldo_eth = float(client.get_asset_balance(asset='ETH')['free'])
-            saldo_sol = float(client.get_asset_balance(asset='SOL')['free'])
-            saldo_xrp = float(client.get_asset_balance(asset='XRP')['free'])
-            saldo_ada = float(client.get_asset_balance(asset='ADA')['free'])
-
-            preco_btc = float(client.get_symbol_ticker(symbol='BTCUSDT')['price'])
-            preco_eth = float(client.get_symbol_ticker(symbol='ETHUSDT')['price'])
-            preco_sol = float(client.get_symbol_ticker(symbol='SOLUSDT')['price'])
-            preco_xrp = float(client.get_symbol_ticker(symbol='XRPUSDT')['price'])
-            preco_ada = float(client.get_symbol_ticker(symbol='ADAUSDT')['price'])
-
-            total_btc = saldo_btc * preco_btc
-            total_eth = saldo_eth * preco_eth
-            total_sol = saldo_sol * preco_sol
-            total_xrp = saldo_xrp * preco_xrp
-            total_ada = saldo_ada * preco_ada
-
-            total_geral = saldo_usdt + total_btc + total_eth + total_sol + total_xrp + total_ada
-
-            st.markdown(f"## 💰 Total Estimado em USDT: {total_geral:.2f}")
-            st.markdown(f"### Saldo detalhado:")
-            st.markdown(f"- USDT: {saldo_usdt:.4f} ≈ {saldo_usdt:.2f} USDT")
-            st.markdown(f"- BTC: {saldo_btc:.6f} ≈ {total_btc:.2f} USDT")
-            st.markdown(f"- ETH: {saldo_eth:.6f} ≈ {total_eth:.2f} USDT")
-            st.markdown(f"- SOL: {saldo_sol:.4f} ≈ {total_sol:.2f} USDT")
-            st.markdown(f"- XRP: {saldo_xrp:.2f} ≈ {total_xrp:.2f} USDT")
-            st.markdown(f"- ADA: {saldo_ada:.2f} ≈ {total_ada:.2f} USDT")
-        except Exception as e:
-            st.warning(f"Erro ao obter saldos da Binance: {e}")
-
 def ajustar_quantidade(symbol, quantidade):
     client = get_binance_client()
     info = client.get_symbol_info(symbol)
@@ -77,13 +32,10 @@ def ajustar_quantidade(symbol, quantidade):
     return quantidade
 
 st.set_page_config(layout="wide")
-
 sns.set_palette("pastel")
 plt.style.use("seaborn-v0_8-pastel")
 
 load_dotenv()
-mostrar_saldos()
-mostrar_saldos()
 API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_API_SECRET")
 TWILIO_SID = os.getenv("TWILIO_SID")
@@ -124,110 +76,157 @@ periodo_grafico = st.sidebar.selectbox("📅 Escolha o Período", ["1h", "24h", 
 if st.session_state.autorefresh:
     st_autorefresh(interval=30000, key="refresh")
 
-
+@st.cache_resource(show_spinner=False)
+def get_binance_client():
+    try:
+        c = Client(API_KEY, API_SECRET, requests_params={"timeout": 30})
+        c.ping()
+        return c
+    except:
+        return None
 
 symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT"]
+log_file = "operacoes_log.csv"
 
+def filtrar_periodo(df, periodo):
+    agora = datetime.now()
+    if 'horario' in df.columns:
+        df['horario'] = pd.to_datetime(df['horario'])
+    elif 'data' in df.columns:
+        df.rename(columns={'data': 'horario'}, inplace=True)
+        df['horario'] = pd.to_datetime(df['horario'])
+    else:
+        st.error("O CSV de log não contém a coluna 'horario' ou 'data'. Corrija o arquivo operacoes_log.csv.")
+        return df.iloc[0:0]
+    if periodo == "1h":
+        inicio = agora - timedelta(hours=1)
+    elif periodo == "24h":
+        inicio = agora - timedelta(days=1)
+    elif periodo == "5d":
+        inicio = agora - timedelta(days=5)
+    elif periodo == "30d":
+        inicio = agora - timedelta(days=30)
+    elif periodo == "1ano":
+        inicio = agora - timedelta(days=365)
+    else:
+        inicio = df['horario'].min()
+    return df[df['horario'] >= inicio]
+
+def get_klines(symbol, interval=Client.KLINE_INTERVAL_15MINUTE, limit=100):
+    client = get_binance_client()
+    if client:
+        try:
+            intervalo_binance = {"15m": Client.KLINE_INTERVAL_15MINUTE, "5m": Client.KLINE_INTERVAL_5MINUTE, "1h": Client.KLINE_INTERVAL_1HOUR}[intervalo]
+            klines = client.get_klines(symbol=symbol, interval=intervalo_binance, limit=limit)
+            closes = [float(k[4]) for k in klines]
+            times = [datetime.fromtimestamp(int(k[0]/1000)) for k in klines]
+            return closes, times
+        except:
+            return None, None
+    return None, None
+
+def analisar_macd(symbol):
+    closes, _ = get_klines(symbol)
+    if closes is None or len(closes) == 0:
+        return False, False, closes
+    macd_line, signal_line, _ = MACD(closes, macd_fast, macd_slow, macd_signal)
+    cruzamento_compra = macd_line[-2] < signal_line[-2] and macd_line[-1] > signal_line[-1]
+    cruzamento_venda = macd_line[-2] > signal_line[-2] and macd_line[-1] < signal_line[-1]
+    return cruzamento_compra, cruzamento_venda, closes
+
+def registrar_operacao(horario, moeda, tipo, preco, qtd):
+    with open(log_file, "a") as f:
+        f.write(f"{horario},{moeda},{tipo},{preco:.2f},{qtd},{macd_fast},{macd_slow},{macd_signal}\n")
+
+def enviar_alerta(mensagem):
+    try:
+        twilio.messages.create(
+            body=mensagem,
+            from_=TWILIO_NUMBER,
+            to=DEST_NUMBER
+        )
+    except Exception as e:
+        st.warning(f"Falha ao enviar alerta via Twilio: {e}")
 
 def executar_trade():
     global usar_ema_cross
     client = get_binance_client()
     if not client:
-        st.warning("⚠️ Erro de conexão com a Binance. Trades não serão executados neste ciclo.")
+        st.warning("Erro de conexão com a Binance.")
         return
     try:
         saldo_total = float(client.get_asset_balance(asset='USDT')['free'])
     except Exception as e:
         st.warning(f"Erro ao obter saldo USDT: {e}")
         saldo_total = 0
-
+    trailing_stop_percentage = 0.02  # Exemplo: 2% de trailing stop
     for symbol in symbols:
-        closes, _ = get_klines(symbol)
-        if closes is None or len(closes) < 3:
-            continue
+        try:
+            cond_compra_macd, cond_venda_macd, closes = analisar_macd(symbol)
 
-        macd_line, signal_line, _ = MACD(closes, macd_fast, macd_slow, macd_signal)
-        ema9 = pd.Series(closes).ewm(span=9, adjust=False).mean()
-        ema21 = pd.Series(closes).ewm(span=21, adjust=False).mean()
+            # Análise de cruzamento de EMA
+            ema9 = pd.Series(closes).ewm(span=9, adjust=False).mean()
+            ema21 = pd.Series(closes).ewm(span=21, adjust=False).mean()
+            ema_cross_compra = ema9.iloc[-2] < ema21.iloc[-2] and ema9.iloc[-1] > ema21.iloc[-1]
+            ema_cross_venda = ema9.iloc[-2] > ema21.iloc[-2] and ema9.iloc[-1] < ema21.iloc[-1]
 
-        cond_compra_macd = macd_line[-2] < signal_line[-2] and macd_line[-1] > signal_line[-1]
-        cond_venda_macd = macd_line[-2] > signal_line[-2] and macd_line[-1] < signal_line[-1]
+            # Condições finais
+            if closes is None or len(closes) < 3:
+                continue
 
-        ema_cross_compra = ema9.iloc[-2] < ema21.iloc[-2] and ema9.iloc[-1] > ema21.iloc[-1]
-        ema_cross_venda = ema9.iloc[-2] > ema21.iloc[-2] and ema9.iloc[-1] < ema21.iloc[-1]
+            cond_compra = cond_compra_macd or (usar_ema_cross and ema_cross_compra)
+            cond_venda = cond_venda_macd or (usar_ema_cross and ema_cross_venda)
+            preco = closes[-1] if closes else None
+            if preco is None:
+                continue
+            quantidade = round(saldo_total / (len(symbols) * preco), 5)
+            quantidade = ajustar_quantidade(symbol, quantidade)
 
-        cond_compra = cond_compra_macd or (usar_ema_cross and ema_cross_compra)
-        cond_venda = cond_venda_macd or (usar_ema_cross and ema_cross_venda)
+            # Verificar valor mínimo notional
+            info = client.get_symbol_info(symbol)
+            min_notional = None
+            for f in info['filters']:
+                if f['filterType'] == 'MIN_NOTIONAL':
+                    min_notional = float(f['minNotional'])
+                    break
+            if min_notional and (quantidade * preco) < min_notional:
+                st.warning(f"Quantidade insuficiente para {symbol}. Valor total abaixo do mínimo permitido pela Binance.")
+                continue
+            agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        preco = closes[-1]
-        quantidade = round(saldo_total / (len(symbols) * preco), 6)
-        quantidade = ajustar_quantidade(symbol, quantidade)
-
-        info = client.get_symbol_info(symbol)
-        min_notional = None
-        for f in info['filters']:
-            if f['filterType'] == 'MIN_NOTIONAL':
-                min_notional = float(f['minNotional'])
-                break
-
-        if min_notional and (quantidade * preco) < min_notional:
-            continue
-
-        agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if cond_compra and st.session_state.trading_ativo:
-            try:
+            if cond_compra and st.session_state.trading_ativo:
                 client.order_market_buy(symbol=symbol, quantity=quantidade)
-                with open(log_file, "a") as f:
-                    f.write(f"{agora},{symbol},COMPRA,{preco},{quantidade}
-")['free'])
-                saldo = ajustar_quantidade(symbol, saldo)
+                registrar_operacao(agora, symbol, "COMPRA", preco, quantidade)
+                enviar_alerta(f"🚀 COMPRA: {symbol} a {preco:.2f}")
+            elif cond_venda and st.session_state.trading_ativo:
+                saldo = float(client.get_asset_balance(asset=symbol.replace("USDT", ""))['free'])
                 if saldo > 0:
                     client.order_market_sell(symbol=symbol, quantity=saldo)
-                    with open(log_file, "a") as f:
-                        f.write(f"{agora},{symbol},VENDA,{preco},{saldo}
-") for k in klines]
-            return closes, times
+                    registrar_operacao(agora, symbol, "VENDA", preco, saldo)
+                    enviar_alerta(f"🔻 VENDA: {symbol} a {preco:.2f}")
         except Exception as e:
-            st.warning(f"Erro ao obter klines de {symbol}: {e}")
-    return None, None
+            st.warning(f"Erro ao processar {symbol}: {e}")
 
-def mostrar_saldos():
-    client = get_binance_client()
-    if client:
-        try:
-            saldo_usdt = float(client.get_asset_balance(asset='USDT')['free'])
-            saldo_btc = float(client.get_asset_balance(asset='BTC')['free'])
-            saldo_eth = float(client.get_asset_balance(asset='ETH')['free'])
-            saldo_sol = float(client.get_asset_balance(asset='SOL')['free'])
-            saldo_xrp = float(client.get_asset_balance(asset='XRP')['free'])
-            saldo_ada = float(client.get_asset_balance(asset='ADA')['free'])
-
-            preco_btc = float(client.get_symbol_ticker(symbol='BTCUSDT')['price'])
-            preco_eth = float(client.get_symbol_ticker(symbol='ETHUSDT')['price'])
-            preco_sol = float(client.get_symbol_ticker(symbol='SOLUSDT')['price'])
-            preco_xrp = float(client.get_symbol_ticker(symbol='XRPUSDT')['price'])
-            preco_ada = float(client.get_symbol_ticker(symbol='ADAUSDT')['price'])
-
-            total_btc = saldo_btc * preco_btc
-            total_eth = saldo_eth * preco_eth
-            total_sol = saldo_sol * preco_sol
-            total_xrp = saldo_xrp * preco_xrp
-            total_ada = saldo_ada * preco_ada
-
-            total_geral = saldo_usdt + total_btc + total_eth + total_sol + total_xrp + total_ada
-
-            st.markdown(f"## 💰 Total Estimado em USDT: {total_geral:.2f}")
-            st.markdown(f"### Saldo detalhado:")
-            st.markdown(f"- USDT: {saldo_usdt:.4f} ≈ {saldo_usdt:.2f} USDT")
-            st.markdown(f"- BTC: {saldo_btc:.6f} ≈ {total_btc:.2f} USDT")
-            st.markdown(f"- ETH: {saldo_eth:.6f} ≈ {total_eth:.2f} USDT")
-            st.markdown(f"- SOL: {saldo_sol:.4f} ≈ {total_sol:.2f} USDT")
-            st.markdown(f"- XRP: {saldo_xrp:.2f} ≈ {total_xrp:.2f} USDT")
-            st.markdown(f"- ADA: {saldo_ada:.2f} ≈ {total_ada:.2f} USDT")
-        except Exception as e:
-            st.warning(f"Erro ao obter saldos da Binance: {e}")
-        except Exception as e:
-            st.warning(f"Erro ao obter saldos da Binance: {e}")
+client = get_binance_client()
+if client:
+    try:
+        saldo_usdt = float(client.get_asset_balance(asset='USDT')['free'])
+        saldo_btc = float(client.get_asset_balance(asset='BTC')['free'])
+        saldo_eth = float(client.get_asset_balance(asset='ETH')['free'])
+        saldo_sol = float(client.get_asset_balance(asset='SOL')['free'])
+        saldo_xrp = float(client.get_asset_balance(asset='XRP')['free'])
+        saldo_ada = float(client.get_asset_balance(asset='ADA')['free'])
+        st.markdown(f"## 💰 Saldos Atuais na Binance:")
+        st.markdown(f"- USDT: {saldo_usdt:.4f}")
+        st.markdown(f"- BTC: {saldo_btc:.6f}")
+        st.markdown(f"- ETH: {saldo_eth:.6f}")
+        st.markdown(f"- SOL: {saldo_sol:.4f}")
+        st.markdown(f"- XRP: {saldo_xrp:.2f}")
+        st.markdown(f"- ADA: {saldo_ada:.2f}")
+    except Exception as e:
+        st.warning(f"Erro ao obter saldos da Binance: {e}")
+    except Exception as e:
+        st.warning(f"Erro ao obter saldo USDT: {e}")
 
 if st.session_state.trading_ativo:
     executar_trade()
