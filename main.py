@@ -15,6 +15,21 @@ from twilio.rest import Client as TwilioClient
 from apscheduler.schedulers.background import BackgroundScheduler
 from decimal import Decimal, ROUND_DOWN
 from streamlit_autorefresh import st_autorefresh
+from decimal import Decimal, ROUND_DOWN
+
+def ajustar_quantidade(symbol, quantidade):
+    client = get_binance_client()
+    info = client.get_symbol_info(symbol)
+    step_size = None
+    for f in info['filters']:
+        if f['filterType'] == 'LOT_SIZE':
+            step_size = Decimal(f['stepSize'])
+            break
+    if step_size:
+        precision = abs(step_size.as_tuple().exponent)
+        quantidade_decimal = Decimal(str(quantidade)).quantize(Decimal(10) ** -precision, rounding=ROUND_DOWN)
+        return float(quantidade_decimal)
+    return quantidade
 
 st.set_page_config(layout="wide")
 sns.set_palette("pastel")
@@ -133,18 +148,6 @@ def enviar_alerta(mensagem):
     except Exception as e:
         st.warning(f"Falha ao enviar alerta via Twilio: {e}")
 
-
-    step_size = None
-    for f in info['filters']:
-        if f['filterType'] == 'LOT_SIZE':
-            step_size = Decimal(f['stepSize'])
-            break
-    if step_size:
-        precision = abs(step_size.as_tuple().exponent)
-        quantidade_decimal = Decimal(str(quantidade)).quantize(Decimal(10) ** -precision, rounding=ROUND_DOWN)
-        return float(quantidade_decimal)
-    return quantidade
-
 def executar_trade():
     global usar_ema_cross
     client = get_binance_client()
@@ -157,20 +160,6 @@ def executar_trade():
         st.warning(f"Erro ao obter saldo USDT: {e}")
         saldo_total = 0
     trailing_stop_percentage = 0.02  # Exemplo: 2% de trailing stop
-
-    def ajustar_quantidade(symbol, quantidade):
-    client = get_binance_client()
-    info = client.get_symbol_info(symbol)
-    step_size = None
-    for f in info['filters']:
-        if f['filterType'] == 'LOT_SIZE':
-            step_size = Decimal(f['stepSize'])
-            break
-    if step_size:
-        precision = abs(step_size.as_tuple().exponent)
-        quantidade_decimal = Decimal(str(quantidade)).quantize(Decimal(10) ** -precision, rounding=ROUND_DOWN)
-        return float(quantidade_decimal)
-    return quantidade
     for symbol in symbols:
         try:
             cond_compra_macd, cond_venda_macd, closes = analisar_macd(symbol)
@@ -256,10 +245,11 @@ if os.path.exists(log_file):
             position[key] = {'preco': row['preco'], 'qtd': row['qtd'], 'data': row['horario']}
         elif row['tipo'] == 'VENDA' and key in position:
             compra = position.pop(key)
-            lucro = (row['preco'] - compra['preco']) * row['qtd']
             stop_loss = compra['preco'] * (1 - stop_loss_percent)
             if row['preco'] < stop_loss:
-                lucro = (stop_loss - compra['preco']) * row['qtd'](row['preco'] - compra['preco']) * row['qtd']
+                lucro = (stop_loss - compra['preco']) * row['qtd']
+            else:
+                lucro = (row['preco'] - compra['preco']) * row['qtd']
             trades.append({
                 'Moeda': key,
                 'Data Compra': compra['data'],
@@ -330,14 +320,7 @@ for symbol in symbols:
     ax2.legend()
     fig2.autofmt_xdate()
     st.pyplot(fig2)
-    ax.plot(times[-len(ema9):], ema9, linestyle='-', alpha=0.6, label='EMA 9')
-    ax.plot(times[-len(ema21):], ema21, linestyle='-', alpha=0.6, label='EMA 21')
-    ax.set_xlabel('Data/Hora')
-    ax.set_ylabel('Indicadores')
-    ax.set_title(f'{symbol} - Indicadores Técnicos')
-    ax.legend()
-    fig.autofmt_xdate()
-    st.pyplot(fig)
+    
 
     df_ind = pd.DataFrame({
         'Horário': times[-len(macd_line):],
