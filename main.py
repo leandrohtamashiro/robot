@@ -167,9 +167,8 @@ def mostrar_saldos():
             st.markdown(f"- ADA: {saldo_ada:.2f} ≈ {total_ada:.2f} USDT")
         except Exception as e:
             st.warning(f"Erro ao obter saldos da Binance: {e}")
-        st.warning(f"Erro ao obter saldos da Binance: {e}")
-    except Exception as e:
-        st.warning(f"Erro ao obter saldo USDT: {e}")
+        except Exception as e:
+            st.warning(f"Erro ao obter saldos da Binance: {e}")
 
 if st.session_state.trading_ativo:
     executar_trade()
