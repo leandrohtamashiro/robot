@@ -34,11 +34,11 @@ def ajustar_quantidade(symbol, quantidade):
 st.set_page_config(layout="wide")
 
 # Exibir saldos logo após o título
-mostrar_saldos()
 sns.set_palette("pastel")
 plt.style.use("seaborn-v0_8-pastel")
 
 load_dotenv()
+mostrar_saldos()
 API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_API_SECRET")
 TWILIO_SID = os.getenv("TWILIO_SID")
