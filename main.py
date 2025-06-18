@@ -45,6 +45,10 @@ macd_fast = st.sidebar.slider("MACD Fast EMA", 5, 20, 12)
 macd_slow = st.sidebar.slider("MACD Slow EMA", 15, 50, 26)
 macd_signal = st.sidebar.slider("MACD Signal EMA", 5, 20, 9)
 
+# Parâmetros de Cruzamento de EMA
+st.sidebar.markdown("## Estratégia de Cruzamento EMA")
+usar_ema_cross = st.sidebar.checkbox("Ativar EMA9 x EMA21", value=True)
+
 # Período para gráficos
 
 # Parâmetros de Stop Loss
@@ -126,6 +130,7 @@ def enviar_alerta(mensagem):
     )
 
 def executar_trade():
+    global usar_ema_cross
     client = get_binance_client()
     if not client:
         st.warning("Erro de conexão com a Binance.")
@@ -138,7 +143,17 @@ def executar_trade():
     trailing_stop_percentage = 0.02  # Exemplo: 2% de trailing stop
     for symbol in symbols:
         try:
-            cond_compra, cond_venda, closes = analisar_macd(symbol)
+            cond_compra_macd, cond_venda_macd, closes = analisar_macd(symbol)
+
+            # Análise de cruzamento de EMA
+            ema9 = pd.Series(closes).ewm(span=9, adjust=False).mean()
+            ema21 = pd.Series(closes).ewm(span=21, adjust=False).mean()
+            ema_cross_compra = ema9.iloc[-2] < ema21.iloc[-2] and ema9.iloc[-1] > ema21.iloc[-1]
+            ema_cross_venda = ema9.iloc[-2] > ema21.iloc[-2] and ema9.iloc[-1] < ema21.iloc[-1]
+
+            # Condições finais
+            cond_compra = cond_compra_macd or (usar_ema_cross and ema_cross_compra)
+            cond_venda = cond_venda_macd or (usar_ema_cross and ema_cross_venda)
             preco = closes[-1] if closes else None
             if preco is None:
                 continue
