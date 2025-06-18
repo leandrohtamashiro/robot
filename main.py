@@ -179,61 +179,13 @@ def executar_trade():
                 client.order_market_buy(symbol=symbol, quantity=quantidade)
                 with open(log_file, "a") as f:
                     f.write(f"{agora},{symbol},COMPRA,{preco},{quantidade}
-")")
-                st.success(f"✔️ Compra executada para {symbol} a {preco:.2f}")
-            except Exception as e:
-                st.warning(f"Erro ao comprar {symbol}: {e}")
-
-        elif cond_venda and st.session_state.trading_ativo:
-            try:
-                saldo = float(client.get_asset_balance(asset=symbol.replace("USDT", ""))['free'])
+")['free'])
                 saldo = ajustar_quantidade(symbol, saldo)
                 if saldo > 0:
                     client.order_market_sell(symbol=symbol, quantity=saldo)
                     with open(log_file, "a") as f:
                         f.write(f"{agora},{symbol},VENDA,{preco},{saldo}
-")")
-                    st.success(f"✔️ Venda executada para {symbol} a {preco:.2f}")
-            except Exception as e:
-                st.warning(f"Erro ao vender {symbol}: {e}")
-log_file = "operacoes_log.csv"
-
-def filtrar_periodo(df, periodo):
-    agora = datetime.now()
-    if 'horario' in df.columns:
-        df['horario'] = pd.to_datetime(df['horario'])
-    elif 'data' in df.columns:
-        df.rename(columns={'data': 'horario'}, inplace=True)
-        df['horario'] = pd.to_datetime(df['horario'])
-    else:
-        st.error("O CSV de log não contém a coluna 'horario' ou 'data'. Corrija o arquivo operacoes_log.csv.")
-        return df.iloc[0:0]
-    if periodo == "1h":
-        inicio = agora - timedelta(hours=1)
-    elif periodo == "24h":
-        inicio = agora - timedelta(days=1)
-    elif periodo == "5d":
-        inicio = agora - timedelta(days=5)
-    elif periodo == "30d":
-        inicio = agora - timedelta(days=30)
-    elif periodo == "1ano":
-        inicio = agora - timedelta(days=365)
-    else:
-        inicio = df['horario'].min()
-    return df[df['horario'] >= inicio]
-
-def get_klines(symbol, interval=Client.KLINE_INTERVAL_15MINUTE, limit=100):
-    client = get_binance_client()
-    if client:
-        try:
-            intervalo_binance = {
-                "15m": Client.KLINE_INTERVAL_15MINUTE,
-                "5m": Client.KLINE_INTERVAL_5MINUTE,
-                "1h": Client.KLINE_INTERVAL_1HOUR,
-            }.get(intervalo, Client.KLINE_INTERVAL_15MINUTE)
-            klines = client.get_klines(symbol=symbol, interval=intervalo_binance, limit=limit)
-            closes = [float(k[4]) for k in klines]
-            times = [datetime.fromtimestamp(int(k[0] / 1000)) for k in klines]
+") for k in klines]
             return closes, times
         except Exception as e:
             st.warning(f"Erro ao obter klines de {symbol}: {e}")
