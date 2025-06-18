@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from technical.indicators import MACD, RSI
 from twilio.rest import Client as TwilioClient
 from apscheduler.schedulers.background import BackgroundScheduler
+from decimal import Decimal, ROUND_DOWN
 from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(layout="wide")
@@ -145,20 +146,19 @@ def executar_trade():
         saldo_total = 0
     trailing_stop_percentage = 0.02  # Exemplo: 2% de trailing stop
 
-    from decimal import Decimal, ROUND_DOWN
-
-def ajustar_quantidade(symbol, quantidade):
-        info = client.get_symbol_info(symbol)
-        step_size = None
-        for f in info['filters']:
-            if f['filterType'] == 'LOT_SIZE':
-                step_size = Decimal(f['stepSize'])
-                break
-        if step_size:
-            precision = abs(step_size.as_tuple().exponent)
-            quantidade_decimal = Decimal(str(quantidade)).quantize(Decimal(10) ** -precision, rounding=ROUND_DOWN)
-            return float(quantidade_decimal)
-        return quantidade
+    def ajustar_quantidade(symbol, quantidade):
+    client = get_binance_client()
+    info = client.get_symbol_info(symbol)
+    step_size = None
+    for f in info['filters']:
+        if f['filterType'] == 'LOT_SIZE':
+            step_size = Decimal(f['stepSize'])
+            break
+    if step_size:
+        precision = abs(step_size.as_tuple().exponent)
+        quantidade_decimal = Decimal(str(quantidade)).quantize(Decimal(10) ** -precision, rounding=ROUND_DOWN)
+        return float(quantidade_decimal)
+    return quantidade
     for symbol in symbols:
         try:
             cond_compra_macd, cond_venda_macd, closes = analisar_macd(symbol)
