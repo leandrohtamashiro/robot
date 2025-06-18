@@ -141,6 +141,18 @@ def executar_trade():
         st.warning(f"Erro ao obter saldo USDT: {e}")
         saldo_total = 0
     trailing_stop_percentage = 0.02  # Exemplo: 2% de trailing stop
+
+    def ajustar_quantidade(symbol, quantidade):
+        info = client.get_symbol_info(symbol)
+        step_size = None
+        for f in info['filters']:
+            if f['filterType'] == 'LOT_SIZE':
+                step_size = float(f['stepSize'])
+                break
+        if step_size:
+            precision = int(round(-np.log10(step_size)))
+            return round(quantidade, precision)
+        return quantidade
     for symbol in symbols:
         try:
             cond_compra_macd, cond_venda_macd, closes = analisar_macd(symbol)
@@ -152,12 +164,16 @@ def executar_trade():
             ema_cross_venda = ema9.iloc[-2] > ema21.iloc[-2] and ema9.iloc[-1] < ema21.iloc[-1]
 
             # Condições finais
+            if closes is None or len(closes) < 3:
+                continue
+
             cond_compra = cond_compra_macd or (usar_ema_cross and ema_cross_compra)
             cond_venda = cond_venda_macd or (usar_ema_cross and ema_cross_venda)
             preco = closes[-1] if closes else None
             if preco is None:
                 continue
             quantidade = round(saldo_total / (len(symbols) * preco), 5)
+            quantidade = ajustar_quantidade(symbol, quantidade)
             agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             if cond_compra and st.session_state.trading_ativo:
