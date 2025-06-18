@@ -17,6 +17,42 @@ from decimal import Decimal, ROUND_DOWN
 from streamlit_autorefresh import st_autorefresh
 from decimal import Decimal, ROUND_DOWN
 
+def mostrar_saldos():
+    client = get_binance_client()
+    if client:
+        try:
+            saldo_usdt = float(client.get_asset_balance(asset='USDT')['free'])
+            saldo_btc = float(client.get_asset_balance(asset='BTC')['free'])
+            saldo_eth = float(client.get_asset_balance(asset='ETH')['free'])
+            saldo_sol = float(client.get_asset_balance(asset='SOL')['free'])
+            saldo_xrp = float(client.get_asset_balance(asset='XRP')['free'])
+            saldo_ada = float(client.get_asset_balance(asset='ADA')['free'])
+
+            preco_btc = float(client.get_symbol_ticker(symbol='BTCUSDT')['price'])
+            preco_eth = float(client.get_symbol_ticker(symbol='ETHUSDT')['price'])
+            preco_sol = float(client.get_symbol_ticker(symbol='SOLUSDT')['price'])
+            preco_xrp = float(client.get_symbol_ticker(symbol='XRPUSDT')['price'])
+            preco_ada = float(client.get_symbol_ticker(symbol='ADAUSDT')['price'])
+
+            total_btc = saldo_btc * preco_btc
+            total_eth = saldo_eth * preco_eth
+            total_sol = saldo_sol * preco_sol
+            total_xrp = saldo_xrp * preco_xrp
+            total_ada = saldo_ada * preco_ada
+
+            total_geral = saldo_usdt + total_btc + total_eth + total_sol + total_xrp + total_ada
+
+            st.markdown(f"## 💰 Total Estimado em USDT: {total_geral:.2f}")
+            st.markdown(f"### Saldo detalhado:")
+            st.markdown(f"- USDT: {saldo_usdt:.4f} ≈ {saldo_usdt:.2f} USDT")
+            st.markdown(f"- BTC: {saldo_btc:.6f} ≈ {total_btc:.2f} USDT")
+            st.markdown(f"- ETH: {saldo_eth:.6f} ≈ {total_eth:.2f} USDT")
+            st.markdown(f"- SOL: {saldo_sol:.4f} ≈ {total_sol:.2f} USDT")
+            st.markdown(f"- XRP: {saldo_xrp:.2f} ≈ {total_xrp:.2f} USDT")
+            st.markdown(f"- ADA: {saldo_ada:.2f} ≈ {total_ada:.2f} USDT")
+        except Exception as e:
+            st.warning(f"Erro ao obter saldos da Binance: {e}")
+
 def ajustar_quantidade(symbol, quantidade):
     client = get_binance_client()
     info = client.get_symbol_info(symbol)
