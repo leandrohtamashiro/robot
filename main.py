@@ -210,8 +210,21 @@ def executar_trade():
 client = get_binance_client()
 if client:
     try:
-        saldo_total = float(client.get_asset_balance(asset='USDT')['free'])
-        st.markdown(f"## 💰 Saldo Atual na Binance (USDT): {saldo_total:.2f}")
+        saldo_usdt = float(client.get_asset_balance(asset='USDT')['free'])
+        saldo_btc = float(client.get_asset_balance(asset='BTC')['free'])
+        saldo_eth = float(client.get_asset_balance(asset='ETH')['free'])
+        saldo_sol = float(client.get_asset_balance(asset='SOL')['free'])
+        saldo_xrp = float(client.get_asset_balance(asset='XRP')['free'])
+        saldo_ada = float(client.get_asset_balance(asset='ADA')['free'])
+        st.markdown(f"## 💰 Saldos Atuais na Binance:")
+        st.markdown(f"- USDT: {saldo_usdt:.4f}")
+        st.markdown(f"- BTC: {saldo_btc:.6f}")
+        st.markdown(f"- ETH: {saldo_eth:.6f}")
+        st.markdown(f"- SOL: {saldo_sol:.4f}")
+        st.markdown(f"- XRP: {saldo_xrp:.2f}")
+        st.markdown(f"- ADA: {saldo_ada:.2f}")
+    except Exception as e:
+        st.warning(f"Erro ao obter saldos da Binance: {e}")
     except Exception as e:
         st.warning(f"Erro ao obter saldo USDT: {e}")
 
