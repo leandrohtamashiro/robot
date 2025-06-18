@@ -153,8 +153,8 @@ def executar_trade():
                 step_size = float(f['stepSize'])
                 break
         if step_size:
-            precision = int(round(-np.log10(step_size)))
-            return round(quantidade, precision)
+            precision = int(abs(np.log10(step_size)))
+            quantidade = round(quantidade, precision)
         return quantidade
     for symbol in symbols:
         try:
@@ -177,6 +177,17 @@ def executar_trade():
                 continue
             quantidade = round(saldo_total / (len(symbols) * preco), 5)
             quantidade = ajustar_quantidade(symbol, quantidade)
+
+            # Verificar valor mínimo notional
+            info = client.get_symbol_info(symbol)
+            min_notional = None
+            for f in info['filters']:
+                if f['filterType'] == 'MIN_NOTIONAL':
+                    min_notional = float(f['minNotional'])
+                    break
+            if min_notional and (quantidade * preco) < min_notional:
+                st.warning(f"Quantidade insuficiente para {symbol}. Valor total abaixo do mínimo permitido pela Binance.")
+                continue
             agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             if cond_compra and st.session_state.trading_ativo:
