@@ -145,16 +145,19 @@ def executar_trade():
         saldo_total = 0
     trailing_stop_percentage = 0.02  # Exemplo: 2% de trailing stop
 
-    def ajustar_quantidade(symbol, quantidade):
+    from decimal import Decimal, ROUND_DOWN
+
+def ajustar_quantidade(symbol, quantidade):
         info = client.get_symbol_info(symbol)
         step_size = None
         for f in info['filters']:
             if f['filterType'] == 'LOT_SIZE':
-                step_size = float(f['stepSize'])
+                step_size = Decimal(f['stepSize'])
                 break
         if step_size:
-            precision = int(abs(np.log10(step_size)))
-            quantidade = round(quantidade, precision)
+            precision = abs(step_size.as_tuple().exponent)
+            quantidade_decimal = Decimal(str(quantidade)).quantize(Decimal(10) ** -precision, rounding=ROUND_DOWN)
+            return float(quantidade_decimal)
         return quantidade
     for symbol in symbols:
         try:
