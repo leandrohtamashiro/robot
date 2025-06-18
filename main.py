@@ -127,6 +127,75 @@ if st.session_state.autorefresh:
 
 
 symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT"]
+
+
+def executar_trade():
+    global usar_ema_cross
+    client = get_binance_client()
+    if not client:
+        st.warning("⚠️ Erro de conexão com a Binance. Trades não serão executados neste ciclo.")
+        return
+    try:
+        saldo_total = float(client.get_asset_balance(asset='USDT')['free'])
+    except Exception as e:
+        st.warning(f"Erro ao obter saldo USDT: {e}")
+        saldo_total = 0
+
+    for symbol in symbols:
+        closes, _ = get_klines(symbol)
+        if closes is None or len(closes) < 3:
+            continue
+
+        macd_line, signal_line, _ = MACD(closes, macd_fast, macd_slow, macd_signal)
+        ema9 = pd.Series(closes).ewm(span=9, adjust=False).mean()
+        ema21 = pd.Series(closes).ewm(span=21, adjust=False).mean()
+
+        cond_compra_macd = macd_line[-2] < signal_line[-2] and macd_line[-1] > signal_line[-1]
+        cond_venda_macd = macd_line[-2] > signal_line[-2] and macd_line[-1] < signal_line[-1]
+
+        ema_cross_compra = ema9.iloc[-2] < ema21.iloc[-2] and ema9.iloc[-1] > ema21.iloc[-1]
+        ema_cross_venda = ema9.iloc[-2] > ema21.iloc[-2] and ema9.iloc[-1] < ema21.iloc[-1]
+
+        cond_compra = cond_compra_macd or (usar_ema_cross and ema_cross_compra)
+        cond_venda = cond_venda_macd or (usar_ema_cross and ema_cross_venda)
+
+        preco = closes[-1]
+        quantidade = round(saldo_total / (len(symbols) * preco), 6)
+        quantidade = ajustar_quantidade(symbol, quantidade)
+
+        info = client.get_symbol_info(symbol)
+        min_notional = None
+        for f in info['filters']:
+            if f['filterType'] == 'MIN_NOTIONAL':
+                min_notional = float(f['minNotional'])
+                break
+
+        if min_notional and (quantidade * preco) < min_notional:
+            continue
+
+        agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if cond_compra and st.session_state.trading_ativo:
+            try:
+                client.order_market_buy(symbol=symbol, quantity=quantidade)
+                with open(log_file, "a") as f:
+                    f.write(f"{agora},{symbol},COMPRA,{preco},{quantidade}
+")
+                st.success(f"✔️ Compra executada para {symbol} a {preco:.2f}")
+            except Exception as e:
+                st.warning(f"Erro ao comprar {symbol}: {e}")
+
+        elif cond_venda and st.session_state.trading_ativo:
+            try:
+                saldo = float(client.get_asset_balance(asset=symbol.replace("USDT", ""))['free'])
+                saldo = ajustar_quantidade(symbol, saldo)
+                if saldo > 0:
+                    client.order_market_sell(symbol=symbol, quantity=saldo)
+                    with open(log_file, "a") as f:
+                        f.write(f"{agora},{symbol},VENDA,{preco},{saldo}
+")
+                    st.success(f"✔️ Venda executada para {symbol} a {preco:.2f}")
+            except Exception as e:
+                st.warning(f"Erro ao vender {symbol}: {e}")
 log_file = "operacoes_log.csv"
 
 def filtrar_periodo(df, periodo):
