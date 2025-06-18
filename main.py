@@ -69,7 +69,7 @@ def get_binance_client():
     except:
         return None
 
-symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "IRONUSDT"]
+symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT"]
 log_file = "operacoes_log.csv"
 
 def filtrar_periodo(df, periodo):
@@ -123,11 +123,14 @@ def registrar_operacao(horario, moeda, tipo, preco, qtd):
         f.write(f"{horario},{moeda},{tipo},{preco:.2f},{qtd},{macd_fast},{macd_slow},{macd_signal}\n")
 
 def enviar_alerta(mensagem):
-    twilio.messages.create(
-        body=mensagem,
-        from_=TWILIO_NUMBER,
-        to=DEST_NUMBER
-    )
+    try:
+        twilio.messages.create(
+            body=mensagem,
+            from_=TWILIO_NUMBER,
+            to=DEST_NUMBER
+        )
+    except Exception as e:
+        st.warning(f"Falha ao enviar alerta via Twilio: {e}")
 
 def executar_trade():
     global usar_ema_cross
@@ -275,7 +278,7 @@ st.subheader("📈 MACD, Médias Móveis e RSI por Moeda")
 
 for symbol in symbols:
     closes, times = get_klines(symbol)
-    if closes is None or times is None:
+    if closes is None or times is None or len(closes) < 3:
         continue
     macd_line, signal_line, _ = MACD(closes, macd_fast, macd_slow, macd_signal)
     rsi_vals = RSI(closes, 14)
