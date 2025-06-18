@@ -179,7 +179,7 @@ def executar_trade():
                 client.order_market_buy(symbol=symbol, quantity=quantidade)
                 with open(log_file, "a") as f:
                     f.write(f"{agora},{symbol},COMPRA,{preco},{quantidade}
-")
+")")
                 st.success(f"✔️ Compra executada para {symbol} a {preco:.2f}")
             except Exception as e:
                 st.warning(f"Erro ao comprar {symbol}: {e}")
@@ -192,7 +192,7 @@ def executar_trade():
                     client.order_market_sell(symbol=symbol, quantity=saldo)
                     with open(log_file, "a") as f:
                         f.write(f"{agora},{symbol},VENDA,{preco},{saldo}
-")
+")")
                     st.success(f"✔️ Venda executada para {symbol} a {preco:.2f}")
             except Exception as e:
                 st.warning(f"Erro ao vender {symbol}: {e}")
