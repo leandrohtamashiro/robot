@@ -133,6 +133,18 @@ def enviar_alerta(mensagem):
     except Exception as e:
         st.warning(f"Falha ao enviar alerta via Twilio: {e}")
 
+
+    step_size = None
+    for f in info['filters']:
+        if f['filterType'] == 'LOT_SIZE':
+            step_size = Decimal(f['stepSize'])
+            break
+    if step_size:
+        precision = abs(step_size.as_tuple().exponent)
+        quantidade_decimal = Decimal(str(quantidade)).quantize(Decimal(10) ** -precision, rounding=ROUND_DOWN)
+        return float(quantidade_decimal)
+    return quantidade
+
 def executar_trade():
     global usar_ema_cross
     client = get_binance_client()
