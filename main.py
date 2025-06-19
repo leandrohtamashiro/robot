@@ -1,4 +1,4 @@
-# main.py - Robô Trader Pro Completo com Tabela de Negociações, Gráficos de Lucro e Indicadores Técnicos
+# main.py - Robô Trader Pro Completo
 
 import streamlit as st
 import pandas as pd
@@ -12,11 +12,10 @@ from binance.client import Client
 from dotenv import load_dotenv
 from technical.indicators import MACD, RSI
 from twilio.rest import Client as TwilioClient
-from apscheduler.schedulers.background import BackgroundScheduler
 from decimal import Decimal, ROUND_DOWN
 from streamlit_autorefresh import st_autorefresh
-from decimal import Decimal, ROUND_DOWN
 
+# Função de ajuste de quantidade para o stepSize correto
 def ajustar_quantidade(symbol, quantidade):
     client = get_binance_client()
     info = client.get_symbol_info(symbol)
@@ -31,10 +30,12 @@ def ajustar_quantidade(symbol, quantidade):
         return float(quantidade_decimal)
     return quantidade
 
+# Setup visual
 st.set_page_config(layout="wide")
 sns.set_palette("pastel")
 plt.style.use("seaborn-v0_8-pastel")
 
+# Carrega variáveis de ambiente
 load_dotenv()
 API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_API_SECRET")
@@ -45,6 +46,7 @@ DEST_NUMBER = os.getenv("DEST_NUMBER")
 
 twilio = TwilioClient(TWILIO_SID, TWILIO_AUTH)
 
+# Estado do Streamlit
 if "trading_ativo" not in st.session_state:
     st.session_state.trading_ativo = True
 if "autorefresh" not in st.session_state:
@@ -65,8 +67,6 @@ macd_signal = st.sidebar.slider("MACD Signal EMA", 5, 20, 9)
 st.sidebar.markdown("## Estratégia de Cruzamento EMA")
 usar_ema_cross = st.sidebar.checkbox("Ativar EMA9 x EMA21", value=True)
 
-# Período para gráficos
-
 # Parâmetros de Stop Loss
 st.sidebar.markdown("## Parâmetros de Stop Loss")
 stop_loss_percent = st.sidebar.slider("Stop Loss (%)", 1, 20, 5) / 100
@@ -76,6 +76,7 @@ periodo_grafico = st.sidebar.selectbox("📅 Escolha o Período", ["1h", "24h", 
 if st.session_state.autorefresh:
     st_autorefresh(interval=30000, key="refresh")
 
+# Cliente da Binance (cache para performance)
 @st.cache_resource(show_spinner=False)
 def get_binance_client():
     try:
@@ -142,8 +143,8 @@ def enviar_alerta(mensagem):
     try:
         twilio.messages.create(
             body=mensagem,
-            from_=TWILIO_NUMBER,
-            to=DEST_NUMBER
+            from_=f'whatsapp:{TWILIO_NUMBER}',
+            to=f'whatsapp:{DEST_NUMBER}'
         )
     except Exception as e:
         st.warning(f"Falha ao enviar alerta via Twilio: {e}")
@@ -163,36 +164,34 @@ def executar_trade():
             saldo_asset = float(client.get_asset_balance(asset=base_asset)['free'])
 
             cond_compra_macd, cond_venda_macd, closes = analisar_macd(symbol)
+            if closes is None or len(closes) < 3:
+                continue
 
             ema9 = pd.Series(closes).ewm(span=9, adjust=False).mean()
             ema21 = pd.Series(closes).ewm(span=21, adjust=False).mean()
-
             ema_cross_compra = ema9.iloc[-2] < ema21.iloc[-2] and ema9.iloc[-1] > ema21.iloc[-1]
             ema_cross_venda = ema9.iloc[-2] > ema21.iloc[-2] and ema9.iloc[-1] < ema21.iloc[-1]
-
             preco = closes[-1]
 
             quantidade = ajustar_quantidade(symbol, saldo_usdt / (len(symbols) * preco))
-
             info = client.get_symbol_info(symbol)
             min_notional = float(next(f['minNotional'] for f in info['filters'] if f['filterType'] == 'MIN_NOTIONAL'))
-
             agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             # Compra
             if (cond_compra_macd or (usar_ema_cross and ema_cross_compra)) and st.session_state.trading_ativo:
                 if quantidade * preco >= min_notional:
-                    ordem_compra = client.order_market_buy(symbol=symbol, quantity=quantidade)
+                    client.order_market_buy(symbol=symbol, quantity=quantidade)
                     registrar_operacao(agora, symbol, "COMPRA", preco, quantidade)
                     enviar_alerta(f"🚀 COMPRA: {symbol} a {preco:.2f}")
                 else:
                     st.warning(f"{symbol}: Quantidade abaixo do mínimo permitido.")
 
             # Venda
+            saldo_asset = ajustar_quantidade(symbol, saldo_asset)
             if (cond_venda_macd or (usar_ema_cross and ema_cross_venda)) and st.session_state.trading_ativo:
-                saldo_asset = ajustar_quantidade(symbol, saldo_asset)
-                if saldo_asset * preco >= min_notional:
-                    ordem_venda = client.order_market_sell(symbol=symbol, quantity=saldo_asset)
+                if saldo_asset * preco >= min_notional and saldo_asset > 0:
+                    client.order_market_sell(symbol=symbol, quantity=saldo_asset)
                     registrar_operacao(agora, symbol, "VENDA", preco, saldo_asset)
                     enviar_alerta(f"🔻 VENDA: {symbol} a {preco:.2f}")
                 else:
@@ -203,9 +202,11 @@ def executar_trade():
         except Exception as e:
             st.warning(f"Erro ao processar {symbol}: {e}")
 
-    # Mostrar saldo total consolidado
-    st.sidebar.markdown(f"## 💰 Saldo Total em USDT\n**{saldo_total_usdt:.2f} USDT**")
+    # Exibir saldo consolidado na barra lateral
+    st.sidebar.markdown("## 💰 Saldo Total em USDT")
+    st.sidebar.markdown(f"**{saldo_total_usdt:.2f} USDT**")
 
+# Exibir saldo atual detalhado na página principal
 client = get_binance_client()
 if client:
     try:
@@ -224,26 +225,22 @@ if client:
         st.markdown(f"- ADA: {saldo_ada:.2f}")
     except Exception as e:
         st.warning(f"Erro ao obter saldos da Binance: {e}")
-    except Exception as e:
-        st.warning(f"Erro ao obter saldo USDT: {e}")
 
 if st.session_state.trading_ativo:
     executar_trade()
 
-# Exibição da Tabela Completa das Negociações
+# =================== HISTÓRICO DE NEGOCIAÇÕES ======================
+
 st.subheader("📋 Histórico Completo de Negociações")
 
 if os.path.exists(log_file):
     df_log = pd.read_csv(log_file, names=["horario", "moeda", "tipo", "preco", "qtd", "macd_fast", "macd_slow", "macd_signal"])
     df_log['horario'] = pd.to_datetime(df_log['horario'])
-    st.dataframe(df_log.sort_values('horario', ascending=False), use_container_width=True)
-else:
-    st.info("Nenhuma operação registrada ainda.")
-
     df_log.dropna(subset=['horario'], inplace=True)
-    df_log.sort_values(by='horario', inplace=True)
-    df_log.sort_values(by='horario', inplace=True)
+    df_log.sort_values('horario', inplace=True)
+    st.dataframe(df_log.sort_values('horario', ascending=False), use_container_width=True)
 
+    # =================== HISTÓRICO DE TRADES E LUCRO =========================
     trades = []
     position = {}
 
@@ -280,29 +277,25 @@ else:
         ax3.set_title('Lucro/Prejuízo por Operação')
         fig3.autofmt_xdate()
         st.pyplot(fig3)
-        
-        # Saldo Total Consolidado
-st.sidebar.markdown("## 💰 Saldo Consolidado")
-st.sidebar.markdown(f"**{saldo_total_usdt:.2f} USDT**")
 
+        # Painel de Saldo Total Consolidado por Dia
+        st.subheader("📅 Saldo Consolidado Diário")
+        df_log['Dia'] = df_log['horario'].dt.date
+        df_log['Lucro'] = df_log.apply(lambda row: row['preco'] * row['qtd'] if row['tipo'] == 'VENDA' else -row['preco'] * row['qtd'], axis=1)
+        saldo_diario = df_log.groupby('Dia')['Lucro'].sum().cumsum().reset_index()
+        fig4, ax4 = plt.subplots()
+        ax4.plot(saldo_diario['Dia'], saldo_diario['Lucro'], marker='o')
+        ax4.set_xlabel('Dia')
+        ax4.set_ylabel('Lucro Acumulado (USDT)')
+        ax4.set_title('Evolução do Saldo Diário')
+        fig4.autofmt_xdate()
+        st.pyplot(fig4)
 
-# Painel de Saldo Total Consolidado por Dia
-    st.subheader("📅 Saldo Consolidado Diário")
-    if not pd.api.types.is_datetime64_any_dtype(df_log['horario']):
-        df_log['horario'] = pd.to_datetime(df_log['horario'], errors='coerce')
-    df_log.dropna(subset=['horario'], inplace=True)
-    df_log['Dia'] = df_log['horario'].dt.date
-    df_log['Lucro'] = df_log.apply(lambda row: row['preco'] * row['qtd'] if row['tipo'] == 'VENDA' else -row['preco'] * row['qtd'], axis=1)
-    saldo_diario = df_log.groupby('Dia')['Lucro'].sum().cumsum().reset_index()
-    fig4, ax4 = plt.subplots()
-    ax4.plot(saldo_diario['Dia'], saldo_diario['Lucro'], marker='o')
-    ax4.set_xlabel('Dia')
-    ax4.set_ylabel('Lucro Acumulado (USDT)')
-    ax4.set_title('Evolução do Saldo Diário')
-    fig4.autofmt_xdate()
-    st.pyplot(fig4)
+else:
+    st.info("Nenhuma operação registrada ainda.")
 
-# Gráficos de Indicadores por Moeda
+# =================== GRÁFICOS DE INDICADORES POR MOEDA =======================
+
 st.subheader("📈 MACD, Médias Móveis e RSI por Moeda")
 
 for symbol in symbols:
@@ -334,7 +327,6 @@ for symbol in symbols:
     fig2.autofmt_xdate()
     st.pyplot(fig2)
     
-
     df_ind = pd.DataFrame({
         'Horário': times[-len(macd_line):],
         'MACD': macd_line,
