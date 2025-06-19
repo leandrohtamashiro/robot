@@ -14,7 +14,7 @@ from twilio.rest import Client as TwilioClient
 from decimal import Decimal, ROUND_DOWN
 from streamlit_autorefresh import st_autorefresh
 
-# Configurações iniciais
+# Configuração de Estilo e Layout
 st.set_page_config(layout="wide")
 sns.set_palette("pastel")
 plt.style.use("seaborn-v0_8-pastel")
@@ -28,37 +28,37 @@ TWILIO_NUMBER = os.getenv("TWILIO_NUMBER")
 DEST_NUMBER = os.getenv("DEST_NUMBER")
 
 twilio = TwilioClient(TWILIO_SID, TWILIO_AUTH)
-
-# Estado inicial
+# Estado inicial de controle da execução
 if "trading_ativo" not in st.session_state:
     st.session_state.trading_ativo = True
 if "autorefresh" not in st.session_state:
     st.session_state.autorefresh = True
 
-# Sidebar de Parâmetros
+# Sidebar de Configurações
 st.sidebar.title("⚙️ Configurações")
 st.session_state.trading_ativo = st.sidebar.toggle("🚦 Robô Ativo", value=st.session_state.trading_ativo)
 st.session_state.autorefresh = st.sidebar.toggle("🔄 Autoatualização", value=st.session_state.autorefresh)
 intervalo = st.sidebar.selectbox("⏱️ Intervalo de Análise", ["15m", "5m", "1h"], index=0)
 
-# MACD
+# Parâmetros MACD
 st.sidebar.markdown("## Parâmetros MACD")
 macd_fast = st.sidebar.slider("MACD Fast EMA", 5, 20, 12)
 macd_slow = st.sidebar.slider("MACD Slow EMA", 15, 50, 26)
 macd_signal = st.sidebar.slider("MACD Signal EMA", 5, 20, 9)
 
-# EMA
-st.sidebar.markdown("## Estratégia EMA")
+# Parâmetros de EMA
+st.sidebar.markdown("## Estratégia de Cruzamento EMA")
 usar_ema_cross = st.sidebar.checkbox("Ativar EMA9 x EMA21", value=True)
 
-# Stop Loss
-st.sidebar.markdown("## Stop Loss")
+# Parâmetros de Stop Loss
+st.sidebar.markdown("## Parâmetros de Stop Loss")
 stop_loss_percent = st.sidebar.slider("Stop Loss (%)", 1, 20, 5) / 100
 
-# Período de Gráfico
+# Período dos Gráficos
 st.sidebar.markdown("## Período dos Gráficos")
-periodo_grafico = st.sidebar.selectbox("📅 Período", ["1h", "24h", "5d", "30d", "1ano"], index=1)
+periodo_grafico = st.sidebar.selectbox("📅 Escolha o Período", ["1h", "24h", "5d", "30d", "1ano"], index=1)
 
+# Auto Refresh
 if st.session_state.autorefresh:
     st_autorefresh(interval=30000, key="refresh")
 symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT"]
@@ -112,13 +112,12 @@ def analisar_macd(symbol):
     cruzamento_compra = macd_line[-2] < signal_line[-2] and macd_line[-1] > signal_line[-1]
     cruzamento_venda = macd_line[-2] > signal_line[-2] and macd_line[-1] < signal_line[-1]
     return cruzamento_compra, cruzamento_venda, closes
-
 def registrar_operacao(horario, moeda, tipo, preco, qtd):
     try:
         with open(log_file, "a") as f:
             f.write(f"{horario},{moeda},{tipo},{preco:.2f},{qtd},{macd_fast},{macd_slow},{macd_signal}\n")
     except Exception as e:
-        st.warning(f"Erro ao gravar no log: {e}")
+        st.warning(f"Erro ao gravar no CSV de operações: {e}")
 
 def enviar_alerta(mensagem):
     try:
@@ -128,12 +127,15 @@ def enviar_alerta(mensagem):
             to=DEST_NUMBER
         )
     except Exception as e:
-        st.warnidef executar_trade():
+        st.warning(f"Falha ao enviar alerta via Twilio: {e}")
+
+def executar_trade():
     global usar_ema_cross
     client = get_binance_client()
     if not client:
         st.warning("Erro de conexão com a Binance.")
         return
+
     try:
         saldo_total = float(client.get_asset_balance(asset='USDT')['free'])
     except Exception as e:
@@ -146,7 +148,7 @@ def enviar_alerta(mensagem):
             if closes is None or len(closes) < 3:
                 continue
 
-            # Estratégia EMA
+            # Análise de cruzamento de EMA
             ema9 = pd.Series(closes).ewm(span=9, adjust=False).mean()
             ema21 = pd.Series(closes).ewm(span=21, adjust=False).mean()
             ema_cross_compra = ema9.iloc[-2] < ema21.iloc[-2] and ema9.iloc[-1] > ema21.iloc[-1]
@@ -164,18 +166,18 @@ def enviar_alerta(mensagem):
                     min_notional = float(f['minNotional'])
                     break
             if min_notional and (quantidade * preco) < min_notional:
-                st.warning(f"Quantidade insuficiente para {symbol}. Valor abaixo do mínimo notional da Binance.")
+                st.warning(f"Quantidade insuficiente para {symbol}. Valor abaixo do mínimo notional.")
                 continue
 
             agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            # Condições de Compra
+            # Compra
             if (cond_compra_macd or (usar_ema_cross and ema_cross_compra)) and st.session_state.trading_ativo:
                 client.order_market_buy(symbol=symbol, quantity=quantidade)
                 registrar_operacao(agora, symbol, "COMPRA", preco, quantidade)
                 enviar_alerta(f"🚀 COMPRA: {symbol} a {preco:.2f}")
 
-            # Condições de Venda
+            # Venda
             if (cond_venda_macd or (usar_ema_cross and ema_cross_venda)) and st.session_state.trading_ativo:
                 saldo_moeda = float(client.get_asset_balance(asset=symbol.replace("USDT", ""))['free'])
                 quantidade_venda = ajustar_quantidade(symbol, saldo_moeda)
@@ -185,10 +187,11 @@ def enviar_alerta(mensagem):
                     enviar_alerta(f"🔻 VENDA: {symbol} a {preco:.2f}")
 
         except Exception as e:
-            st.warning(f"Erro ao processar {symbol}: {e}")
+            st.warning(f"Erro ao processar trade de {symbol}: {e}")
 
 if st.session_state.trading_ativo:
     executar_trade()
+# Exibição de Saldos das Moedas
 client = get_binance_client()
 if client:
     try:
@@ -213,22 +216,13 @@ if client:
 st.subheader("📋 Histórico de Negociações do Robô")
 if os.path.exists(log_file):
     df_log = pd.read_csv(log_file)
-    if 'horario' in df_log.columns:
-        df_log['horario'] = pd.to_datetime(df_log['horario'], errors='coerce')
-    elif 'data' in df_log.columns:
-        df_log.rename(columns={'data': 'horario'}, inplace=True)
-        df_log['horario'] = pd.to_datetime(df_log['horario'], errors='coerce')
-    else:
-        st.info("Nenhuma coluna de data encontrada no log ainda. Aguarde a primeira operação.")
-        df_log = pd.DataFrame(columns=["horario", "moeda", "tipo", "preco", "qtd", "macd_fast", "macd_slow", "macd_signal"])
-
+    df_log['horario'] = pd.to_datetime(df_log['horario'], errors='coerce')
     df_log.dropna(subset=['horario'], inplace=True)
     df_log.sort_values(by='horario', inplace=True)
 
-    # Tabela completa
     st.dataframe(df_log, use_container_width=True)
 
-    # Cálculo de Lucro/Prejuízo por Operação
+    # Lucro por Operação
     trades = []
     position = {}
     for index, row in df_log.iterrows():
@@ -264,7 +258,7 @@ if os.path.exists(log_file):
         fig3.autofmt_xdate()
         st.pyplot(fig3)
 
-        # Saldo Acumulado Diário
+        # Saldo Diário
         st.subheader("📅 Saldo Consolidado Diário")
         df_log['Dia'] = df_log['horario'].dt.date
         df_log['Lucro'] = df_log.apply(lambda row: row['preco'] * row['qtd'] if row['tipo'] == 'VENDA' else -row['preco'] * row['qtd'], axis=1)
@@ -276,9 +270,9 @@ if os.path.exists(log_file):
         ax4.set_title('Evolução do Saldo Diário')
         fig4.autofmt_xdate()
         st.pyplot(fig4)
+
 # Gráficos de Indicadores Técnicos por Moeda
 st.subheader("📊 Indicadores Técnicos por Moeda")
-
 for symbol in symbols:
     closes, times = get_klines(symbol)
     if closes is None or times is None or len(closes) < 3:
@@ -291,10 +285,8 @@ for symbol in symbols:
 
     # Gráfico de EMAs
     fig, ax = plt.subplots()
-    ax.plot(times[-len(ema9):], ema9, linestyle='-', alpha=0.6, label='EMA 9')
-    ax.plot(times[-len(ema21):], ema21, linestyle='-', alpha=0.6, label='EMA 21')
-    ax.set_xlabel('Data/Hora')
-    ax.set_ylabel('Médias Móveis')
+    ax.plot(times[-len(ema9):], ema9, linestyle='-', label='EMA 9')
+    ax.plot(times[-len(ema21):], ema21, linestyle='-', label='EMA 21')
     ax.set_title(f'{symbol} - EMA 9 e EMA 21')
     ax.legend()
     fig.autofmt_xdate()
@@ -304,8 +296,6 @@ for symbol in symbols:
     fig2, ax2 = plt.subplots()
     ax2.plot(times[-len(macd_line):], macd_line, linestyle='--', label='MACD')
     ax2.plot(times[-len(signal_line):], signal_line, linestyle=':', label='Signal')
-    ax2.set_xlabel('Data/Hora')
-    ax2.set_ylabel('MACD e Signal')
     ax2.set_title(f'{symbol} - MACD vs Signal')
     ax2.legend()
     fig2.autofmt_xdate()
