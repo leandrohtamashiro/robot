@@ -1,5 +1,3 @@
-# Parte 1: Configurações, Importações e Funções Auxiliares
-
 import streamlit as st
 import pandas as pd
 import os
@@ -94,6 +92,49 @@ def enviar_alerta(mensagem):
     except Exception as e:
         st.warning(f"Falha ao enviar alerta via Twilio: {e}")
 
+def get_price(symbol):
+    client = get_binance_client()
+    try:
+        price = float(client.get_symbol_ticker(symbol=symbol)['price'])
+        return price
+    except Exception:
+        return 0.0
+
+def mostrar_saldo_total_sidebar():
+    client = get_binance_client()
+    if not client:
+        st.sidebar.markdown("**Erro de conexão.**")
+        return
+
+    try:
+        saldo_usdt = float(client.get_asset_balance(asset='USDT')['free'])
+        saldo_btc = float(client.get_asset_balance(asset='BTC')['free'])
+        saldo_eth = float(client.get_asset_balance(asset='ETH')['free'])
+        saldo_sol = float(client.get_asset_balance(asset='SOL')['free'])
+        saldo_xrp = float(client.get_asset_balance(asset='XRP')['free'])
+        saldo_ada = float(client.get_asset_balance(asset='ADA')['free'])
+
+        cot_btc = get_price("BTCUSDT")
+        cot_eth = get_price("ETHUSDT")
+        cot_sol = get_price("SOLUSDT")
+        cot_xrp = get_price("XRPUSDT")
+        cot_ada = get_price("ADAUSDT")
+
+        saldo_total = (
+            saldo_usdt +
+            saldo_btc * cot_btc +
+            saldo_eth * cot_eth +
+            saldo_sol * cot_sol +
+            saldo_xrp * cot_xrp +
+            saldo_ada * cot_ada
+        )
+
+        st.sidebar.markdown("## 💰 Saldo Total em USDT")
+        st.sidebar.markdown(f"**{saldo_total:.2f} USDT**")
+
+    except Exception as e:
+        st.sidebar.warning(f"Erro ao obter saldo total: {e}")
+
 def executar_trade():
     client = get_binance_client()
     if not client:
@@ -104,7 +145,6 @@ def executar_trade():
     except Exception as e:
         st.warning(f"Erro ao consultar saldo USDT: {e}")
         saldo_usdt = 0
-    saldo_total_usdt = saldo_usdt
     for symbol in symbols:
         try:
             base_asset = symbol.replace('USDT', '')
@@ -121,25 +161,26 @@ def executar_trade():
             info = client.get_symbol_info(symbol)
             min_notional = float(next(f['minNotional'] for f in info['filters'] if f['filterType'] == 'MIN_NOTIONAL'))
             agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # COMPRA (MACD ou EMA cruzou para cima)
             if (cond_compra_macd or (usar_ema_cross and ema_cross_compra)) and st.session_state.trading_ativo:
                 if quantidade * preco >= min_notional:
                     client.order_market_buy(symbol=symbol, quantity=quantidade)
                     registrar_operacao(agora, symbol, "COMPRA", preco, quantidade)
                     enviar_alerta(f"🚀 COMPRA: {symbol} a {preco:.2f}")
             saldo_asset = ajustar_quantidade(symbol, saldo_asset)
+            # VENDA (MACD ou EMA cruzou para baixo)
+            # SE QUISER VENDER SÓ POR EMA, troque o if para: if (usar_ema_cross and ema_cross_venda) and st.session_state.trading_ativo:
             if (cond_venda_macd or (usar_ema_cross and ema_cross_venda)) and st.session_state.trading_ativo:
                 if saldo_asset * preco >= min_notional and saldo_asset > 0:
                     client.order_market_sell(symbol=symbol, quantity=saldo_asset)
                     registrar_operacao(agora, symbol, "VENDA", preco, saldo_asset)
                     enviar_alerta(f"🔻 VENDA: {symbol} a {preco:.2f}")
-            saldo_total_usdt += saldo_asset * preco
         except Exception as e:
             st.warning(f"Erro ao processar {symbol}: {e}")
-    st.sidebar.markdown("## 💰 Saldo Total em USDT")
-    st.sidebar.markdown(f"**{saldo_total_usdt:.2f} USDT**")
 
 client = get_binance_client()
 if client:
+    mostrar_saldo_total_sidebar()
     try:
         saldo_usdt = float(client.get_asset_balance(asset='USDT')['free'])
         saldo_btc = float(client.get_asset_balance(asset='BTC')['free'])
@@ -159,8 +200,6 @@ if client:
 
 if st.session_state.trading_ativo:
     executar_trade()
-
-# =================== HISTÓRICO DE NEGOCIAÇÕES ======================
 
 st.subheader("📋 Histórico Completo de Negociações")
 
